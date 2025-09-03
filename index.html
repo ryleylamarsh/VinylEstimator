@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Vinyl Estimator v2 (Google Sheets)</title>
+  <style>
+    /* (same CSS as before, trimmed for brevity) */
+    body{margin:0;background:#f6f7f8;font:16px/1.4 system-ui}
+    .tabs{display:flex;gap:4px;padding:8px;background:#333}
+    .tab{flex:1;padding:12px;text-align:center;color:#dfe7ee;cursor:pointer;border-radius:8px}
+    .tab.active{background:#00796b;color:#fff;font-weight:600}
+    .container{max-width:900px;margin:18px auto;padding:18px}
+    .card{background:#fff;border:1px solid #d6dde5;border-radius:10px;padding:16px}
+    h2{margin:0 0 12px} h3{margin:10px 0 6px}
+    label{font-weight:600;display:block;margin:8px 0 4px}
+    input,select,button,textarea{width:100%;padding:10px;font-size:16px;border:1px solid #d6dde5;border-radius:8px}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .row > *{flex:1 1 180px}
+    .result,.final{background:#e6f6ea;padding:12px;border-radius:8px;color:#2e7d32;font-weight:600}
+    .materials-list{margin-top:8px}
+    .chip{background:#eef3ff;color:#284b8c;padding:2px 8px;border-radius:999px;font-size:12px}
+    .mono{font-variant-numeric:tabular-nums}
+    .muted{color:#5b6b7a}
+  </style>
+</head>
+<body>
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" data-tab="estimator">Estimator</div>
+    <div class="tab" data-tab="labor">Labor & Add-Ons</div>
+    <div class="tab" data-tab="final">Final Quote</div>
+    <div class="tab" data-tab="materials">Materials</div>
+  </div>
+
+  <div class="container">
+    <!-- ESTIMATOR -->
+    <section id="estimator" class="card">
+      <h2>Estimator: Vinyl + Laminate</h2>
+      <div class="row">
+        <button id="addDimBtn">+ Add Print Area</button>
+        <button id="clearDimBtn">Clear</button>
+      </div>
+      <div id="dimensionList"></div>
+
+      <label for="bleed">Bleed per side (in)</label>
+      <input type="number" id="bleed" value="0" step="0.1"/>
+
+      <label for="waste">Waste (%)</label>
+      <input type="number" id="waste" value="7" step="1"/>
+
+      <label>Total Area</label>
+      <div><span id="totalSqft" class="chip mono">0.00 sq ft</span></div>
+
+      <h3>Materials</h3>
+      <label for="material">Vinyl</label>
+      <select id="material"></select>
+
+      <label for="laminate">Overlaminate</label>
+      <select id="laminate"><option value="">None</option></select>
+
+      <label for="markup">Markup ×</label>
+      <input type="number" id="markup" value="2.5" step="0.1"/>
+
+      <div class="result" id="estimatorBreakdown">Fill area & materials to calculate</div>
+    </section>
+
+    <!-- LABOR -->
+    <section id="labor" class="card" hidden>
+      <h2>Labor & Add-Ons</h2>
+      <label for="hourlyRate">Hourly Rate</label>
+      <input type="number" id="hourlyRate" value="60"/>
+      <label for="designTime">Design (hrs)</label>
+      <input type="number" id="designTime"/>
+      <label for="installTime">Install (hrs)</label>
+      <input type="number" id="installTime"/>
+      <div class="result" id="laborBreakdown">Enter labor info</div>
+    </section>
+
+    <!-- FINAL -->
+    <section id="final" class="card" hidden>
+      <h2>Final Quote</h2>
+      <div class="final" id="finalBreakdown">Complete inputs to see final</div>
+    </section>
+
+    <!-- MATERIALS -->
+    <section id="materials" class="card" hidden>
+      <h2>Materials (Live from Google Sheets)</h2>
+      <div id="materialsList" class="materials-list"></div>
+      <div class="muted">Update your Google Sheet → refresh this page to sync.</div>
+    </section>
+  </div>
+
+  <script>
+    // ---------- CONFIG ----------
+    const SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSRw1bG3LLKW223CQVAH2ENVPX4vlqpzUS5HHLRMedU5Jp6vmkpGul2CE6ij_EkVqh07EYg8gwZwTLI/pub?output=csv"; 
+    // TODO: replace with your sheet's publish-to-web CSV link
+
+    // ---------- STATE ----------
+    let materials = [];
+
+    // ---------- HELPERS ----------
+    const $ = s => document.querySelector(s);
+    const $$ = s => [...document.querySelectorAll(s)];
+    function money(n){return new Intl.NumberFormat('en-CA',{style:'currency',currency:'CAD'}).format(n||0);}
+    function toNum(el){return parseFloat(el?.value)||0;}
+
+    // ---------- FETCH SHEET ----------
+    async function fetchMaterials(){
+      try{
+        const resp = await fetch(SHEET_URL);
+        const text = await resp.text();
+        const lines = text.split(/\r?\n/).filter(l=>l.trim());
+        const [header,...rows] = lines.map(r=>r.split(","));
+        const idx = {};
+        header.forEach((h,i)=> idx[h.trim()] = i);
+        materials = rows.map(r=>({
+          name:r[idx.Name],
+          type:r[idx.Type],
+          length:parseFloat(r[idx.Length_ft]),
+          width:parseFloat(r[idx.Width_in]),
+          price:parseFloat(r[idx.Price_CAD])
+        })).filter(m=>m.name);
+        populateDropdowns(); renderMaterialsList(); recalc();
+      }catch(err){
+        console.error("Sheet fetch failed",err);
+        alert("Could not load materials. Check Google Sheet sharing.");
+      }
+    }
+
+    // ---------- MATERIALS ----------
+    function computeCostPerSqFt(m){ return m.price / (m.length * (m.width/12)); }
+    function populateDropdowns(){
+      $('#material').innerHTML="";
+      $('#laminate').innerHTML="<option value=''>None</option>";
+      materials.forEach(m=>{
+        const opt=document.createElement("option");
+        opt.value=m.name;
+        opt.textContent=`${m.name} (${money(computeCostPerSqFt(m))}/sq ft)`;
+        if(m.type==="Vinyl") $('#material').appendChild(opt);
+        if(m.type==="Overlaminate") $('#laminate').appendChild(opt);
+      });
+    }
+    function renderMaterialsList(){
+      const list=$('#materialsList'); list.innerHTML="";
+      materials.forEach(m=>{
+        list.innerHTML+=`<div><strong>${m.name}</strong> <span class="chip">${m.type}</span> - ${money(computeCostPerSqFt(m))}/sq ft</div>`;
+      });
+    }
+
+    // ---------- DIMENSIONS ----------
+    function addDimension(l=0,w=0){
+      const row=document.createElement("div");
+      row.className="row";
+      row.innerHTML=`<input type="number" class="dimL" value="${l}"/> × <input type="number" class="dimW" value="${w}"/> in <button class="removeBtn">🗑️</button>`;
+      $('#dimensionList').appendChild(row);
+      row.querySelectorAll("input").forEach(i=>i.addEventListener("input",recalc));
+      row.querySelector(".removeBtn").onclick=()=>{row.remove();recalc();};
+    }
+    function clearDimensions(){ $('#dimensionList').innerHTML=""; addDimension(); recalc(); }
+    function calcSqFt(){
+      let total=0;
+      const bleed=toNum($('#bleed'))*2;
+      $$('.dimL').forEach((l,i)=>{
+        const w=$$('.dimW')[i];
+        const L=toNum(l)+bleed, W=toNum(w)+bleed;
+        if(L>0&&W>0) total+=L*W;
+      });
+      return total/144*(1+toNum($('#waste'))/100);
+    }
+
+    // ---------- MODEL ----------
+    function model(){
+      const vinyl=materials.find(m=>m.name===$('#material').value);
+      const lam=materials.find(m=>m.name===$('#laminate').value);
+      const sqFt=calcSqFt();
+      const markup=Math.max(1,toNum($('#markup')));
+      const vClient=vinyl?computeCostPerSqFt(vinyl)*markup:0;
+      const lClient=lam?computeCostPerSqFt(lam)*markup:0;
+      const totalMatCost=(vinyl?computeCostPerSqFt(vinyl)*sqFt:0)+(lam?computeCostPerSqFt(lam)*sqFt:0);
+      const totalClient=(vClient+lClient)*sqFt;
+      const design=toNum($('#designTime')), install=toNum($('#installTime')), rate=toNum($('#hourlyRate'));
+      const laborCharge=(design+install)*rate;
+      return {sqFt,totalMatCost,totalClient,laborCharge};
+    }
+
+    // ---------- UI ----------
+    function recalc(){
+      const m=model();
+      $('#totalSqft').textContent=`${m.sqFt.toFixed(2)} sq ft`;
+      $('#estimatorBreakdown').innerHTML=`Client Material Charge: ${money(m.totalClient)}<br>Material Cost: ${money(m.totalMatCost)}`;
+      $('#laborBreakdown').textContent=`Labor Charge: ${money(m.laborCharge)}`;
+      $('#finalBreakdown').innerHTML=`<strong>Total:</strong> ${money(m.totalClient+m.laborCharge)}`;
+    }
+
+    // ---------- INIT ----------
+    function init(){
+      $('#addDimBtn').onclick=()=>addDimension();
+      $('#clearDimBtn').onclick=clearDimensions;
+      $$('#markup,#bleed,#waste,#hourlyRate,#designTime,#installTime').forEach(el=>el.addEventListener("input",recalc));
+      $$('#material,#laminate').forEach(el=>el.addEventListener("change",recalc));
+      $$('.tab').forEach(tab=>tab.onclick=()=>{ $$('.tab').forEach(t=>t.classList.remove('active')); tab.classList.add('active'); ['estimator','labor','final','materials'].forEach(id=>document.getElementById(id).hidden=id!==tab.dataset.tab); });
+      addDimension();
+      fetchMaterials(); // load from Google Sheets
+    }
+    init();
+  </script>
+</body>
+</html>
