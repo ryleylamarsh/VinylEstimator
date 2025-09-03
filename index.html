@@ -5,32 +5,88 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Vinyl Estimator v2 (Google Sheets)</title>
   <style>
-    /* (same CSS as before, trimmed for brevity) */
-    body{margin:0;background:#f6f7f8;font:16px/1.4 system-ui}
-    .tabs{display:flex;gap:4px;padding:8px;background:#333}
-    .tab{flex:1;padding:12px;text-align:center;color:#dfe7ee;cursor:pointer;border-radius:8px}
-    .tab.active{background:#00796b;color:#fff;font-weight:600}
+    body {
+      margin:0;
+      background:#f6f7f8;
+      font:16px/1.4 system-ui;
+    }
+    /* Tabs (desktop) */
+    .tabs {
+      display:flex;
+      gap:4px;
+      padding:8px;
+      background:#333;
+    }
+    .tab {
+      flex:1;
+      padding:12px;
+      text-align:center;
+      color:#dfe7ee;
+      cursor:pointer;
+      border-radius:8px;
+      transition:background .3s;
+    }
+    .tab.active {background:#00796b;color:#fff;font-weight:600;}
+    /* Container + Cards */
     .container{max-width:900px;margin:18px auto;padding:18px}
     .card{background:#fff;border:1px solid #d6dde5;border-radius:10px;padding:16px}
-    h2{margin:0 0 12px} h3{margin:10px 0 6px}
+    h2{margin:0 0 12px}
     label{font-weight:600;display:block;margin:8px 0 4px}
     input,select,button,textarea{width:100%;padding:10px;font-size:16px;border:1px solid #d6dde5;border-radius:8px}
     .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
     .row > *{flex:1 1 180px}
     .result,.final{background:#e6f6ea;padding:12px;border-radius:8px;color:#2e7d32;font-weight:600}
-    .materials-list{margin-top:8px}
+    .materials-list{margin:8px 0 16px}
     .chip{background:#eef3ff;color:#284b8c;padding:2px 8px;border-radius:999px;font-size:12px}
     .mono{font-variant-numeric:tabular-nums}
     .muted{color:#5b6b7a}
-    .materials-list {
-  margin-top: 8px;
-  margin-bottom: 16px; /* 👈 this adds space below */
-}
+    /* Hamburger button (mobile only) */
+    .hamburger {
+      display:none;
+      background:#333;
+      color:#fff;
+      padding:12px 16px;
+      cursor:pointer;
+      font-size:18px;
+    }
+    /* Mobile menu overlay */
+    .mobile-menu {
+      position:fixed;
+      top:0;left:-220px;
+      width:200px;
+      height:100%;
+      background:#333;
+      display:flex;
+      flex-direction:column;
+      padding-top:20px;
+      transition:left 0.3s ease;
+      z-index:1000;
+    }
+    .mobile-menu.show {left:0;}
+    .mobile-menu .tab {
+      flex:none;
+      text-align:left;
+      padding:14px 20px;
+      border-bottom:1px solid #444;
+      border-radius:0;
+    }
+    @media (max-width:700px) {
+      .tabs {display:none;}  /* hide desktop tabs */
+      .hamburger {display:block;} /* show hamburger */
+    }
   </style>
 </head>
 <body>
-  <!-- Tabs -->
+  <!-- Desktop Tabs -->
   <div class="tabs">
+    <div class="tab active" data-tab="estimator">Estimator</div>
+    <div class="tab" data-tab="labor">Labor & Add-Ons</div>
+    <div class="tab" data-tab="final">Final Quote</div>
+    <div class="tab" data-tab="materials">Materials</div>
+  </div>
+  <!-- Mobile Hamburger -->
+  <div class="hamburger">☰ Menu</div>
+  <div class="mobile-menu" id="mobileMenu">
     <div class="tab active" data-tab="estimator">Estimator</div>
     <div class="tab" data-tab="labor">Labor & Add-Ons</div>
     <div class="tab" data-tab="final">Final Quote</div>
@@ -46,26 +102,19 @@
         <button id="clearDimBtn">Clear</button>
       </div>
       <div id="dimensionList"></div>
-
       <label for="bleed">Bleed per side (in)</label>
       <input type="number" id="bleed" value="0" step="0.1"/>
-
       <label for="waste">Waste (%)</label>
       <input type="number" id="waste" value="7" step="1"/>
-
       <label>Total Area</label>
       <div><span id="totalSqft" class="chip mono">0.00 sq ft</span></div>
-
       <h3>Materials</h3>
       <label for="material">Vinyl</label>
       <select id="material"></select>
-
       <label for="laminate">Overlaminate</label>
       <select id="laminate"><option value="">None</option></select>
-
       <label for="markup">Markup ×</label>
       <input type="number" id="markup" value="2.5" step="0.1"/>
-
       <div class="result" id="estimatorBreakdown">Fill area & materials to calculate</div>
     </section>
 
@@ -97,10 +146,8 @@
 
   <script>
     // ---------- CONFIG ----------
-    const SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSRw1bG3LLKW223CQVAH2ENVPX4vlqpzUS5HHLRMedU5Jp6vmkpGul2CE6ij_EkVqh07EYg8gwZwTLI/pub?output=csv"; 
-    // TODO: replace with your sheet's publish-to-web CSV link
-
-    // ---------- STATE ----------
+    const SHEET_URL = "https://docs.google.com/spreadsheets/d/XXXXXXXXXXXX/export?format=csv"; 
+    // replace with your own sheet publish-to-web CSV link
     let materials = [];
 
     // ---------- HELPERS ----------
@@ -116,8 +163,7 @@
         const text = await resp.text();
         const lines = text.split(/\r?\n/).filter(l=>l.trim());
         const [header,...rows] = lines.map(r=>r.split(","));
-        const idx = {};
-        header.forEach((h,i)=> idx[h.trim()] = i);
+        const idx = {}; header.forEach((h,i)=> idx[h.trim()] = i);
         materials = rows.map(r=>({
           name:r[idx.Name],
           type:r[idx.Type],
@@ -126,17 +172,13 @@
           price:parseFloat(r[idx.Price_CAD])
         })).filter(m=>m.name);
         populateDropdowns(); renderMaterialsList(); recalc();
-      }catch(err){
-        console.error("Sheet fetch failed",err);
-        alert("Could not load materials. Check Google Sheet sharing.");
-      }
+      }catch(err){console.error("Sheet fetch failed",err);}
     }
 
     // ---------- MATERIALS ----------
-    function computeCostPerSqFt(m){ return m.price / (m.length * (m.width/12)); }
+    function computeCostPerSqFt(m){return m.price/(m.length*(m.width/12));}
     function populateDropdowns(){
-      $('#material').innerHTML="";
-      $('#laminate').innerHTML="<option value=''>None</option>";
+      $('#material').innerHTML=""; $('#laminate').innerHTML="<option value=''>None</option>";
       materials.forEach(m=>{
         const opt=document.createElement("option");
         opt.value=m.name;
@@ -161,13 +203,11 @@
       row.querySelectorAll("input").forEach(i=>i.addEventListener("input",recalc));
       row.querySelector(".removeBtn").onclick=()=>{row.remove();recalc();};
     }
-    function clearDimensions(){ $('#dimensionList').innerHTML=""; addDimension(); recalc(); }
+    function clearDimensions(){ $('#dimensionList').innerHTML=""; addDimension(); recalc();}
     function calcSqFt(){
-      let total=0;
-      const bleed=toNum($('#bleed'))*2;
+      let total=0; const bleed=toNum($('#bleed'))*2;
       $$('.dimL').forEach((l,i)=>{
-        const w=$$('.dimW')[i];
-        const L=toNum(l)+bleed, W=toNum(w)+bleed;
+        const w=$$('.dimW')[i]; const L=toNum(l)+bleed, W=toNum(w)+bleed;
         if(L>0&&W>0) total+=L*W;
       });
       return total/144*(1+toNum($('#waste'))/100);
@@ -203,9 +243,21 @@
       $('#clearDimBtn').onclick=clearDimensions;
       $$('#markup,#bleed,#waste,#hourlyRate,#designTime,#installTime').forEach(el=>el.addEventListener("input",recalc));
       $$('#material,#laminate').forEach(el=>el.addEventListener("change",recalc));
-      $$('.tab').forEach(tab=>tab.onclick=()=>{ $$('.tab').forEach(t=>t.classList.remove('active')); tab.classList.add('active'); ['estimator','labor','final','materials'].forEach(id=>document.getElementById(id).hidden=id!==tab.dataset.tab); });
-      addDimension();
-      fetchMaterials(); // load from Google Sheets
+
+      function activateTab(tab){
+        $$('.tab').forEach(t=>t.classList.remove('active'));
+        tab.classList.add('active');
+        ['estimator','labor','final','materials'].forEach(id=>{
+          document.getElementById(id).hidden=id!==tab.dataset.tab;
+        });
+        // close mobile menu after selection
+        $('#mobileMenu').classList.remove('show');
+      }
+
+      $$('.tab').forEach(tab=>tab.onclick=()=>activateTab(tab));
+      $('.hamburger').onclick=()=>$('#mobileMenu').classList.toggle('show');
+
+      addDimension(); fetchMaterials();
     }
     init();
   </script>
