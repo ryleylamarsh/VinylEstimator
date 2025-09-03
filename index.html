@@ -60,7 +60,7 @@
       flex-direction:column;
       padding-top:20px;
       transition:left 0.3s ease;
-      z-index:1000;
+      z-index:1001;
     }
     .mobile-menu.show {left:0;}
     .mobile-menu .tab {
@@ -69,6 +69,21 @@
       padding:14px 20px;
       border-bottom:1px solid #444;
       border-radius:0;
+    }
+    /* Background overlay */
+    .overlay {
+      position:fixed;
+      top:0;left:0;
+      width:100%;height:100%;
+      background:rgba(0,0,0,0.5);
+      opacity:0;
+      pointer-events:none;
+      transition:opacity 0.3s ease;
+      z-index:1000;
+    }
+    .overlay.show {
+      opacity:1;
+      pointer-events:auto;
     }
     @media (max-width:700px) {
       .tabs {display:none;}  /* hide desktop tabs */
@@ -92,6 +107,7 @@
     <div class="tab" data-tab="final">Final Quote</div>
     <div class="tab" data-tab="materials">Materials</div>
   </div>
+  <div class="overlay" id="overlay"></div>
 
   <div class="container">
     <!-- ESTIMATOR -->
@@ -147,7 +163,7 @@
   <script>
     // ---------- CONFIG ----------
     const SHEET_URL = "https://docs.google.com/spreadsheets/d/XXXXXXXXXXXX/export?format=csv"; 
-    // replace with your own sheet publish-to-web CSV link
+    // replace with your sheet publish-to-web CSV link
     let materials = [];
 
     // ---------- HELPERS ----------
@@ -250,12 +266,20 @@
         ['estimator','labor','final','materials'].forEach(id=>{
           document.getElementById(id).hidden=id!==tab.dataset.tab;
         });
-        // close mobile menu after selection
+        // close mobile menu and overlay after selection
         $('#mobileMenu').classList.remove('show');
+        $('#overlay').classList.remove('show');
       }
 
       $$('.tab').forEach(tab=>tab.onclick=()=>activateTab(tab));
-      $('.hamburger').onclick=()=>$('#mobileMenu').classList.toggle('show');
+      $('.hamburger').onclick=()=>{
+        $('#mobileMenu').classList.toggle('show');
+        $('#overlay').classList.toggle('show');
+      };
+      $('#overlay').onclick=()=>{
+        $('#mobileMenu').classList.remove('show');
+        $('#overlay').classList.remove('show');
+      };
 
       addDimension(); fetchMaterials();
     }
