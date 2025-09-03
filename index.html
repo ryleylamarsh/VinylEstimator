@@ -43,13 +43,37 @@
     /* Hamburger button (mobile only) */
     .hamburger {
       display:none;
-      background:#333;
-      color:#fff;
-      padding:12px 16px;
+      width:40px;
+      height:30px;
+      margin:10px;
+      position:relative;
       cursor:pointer;
-      font-size:18px;
+      z-index:1100;
     }
-    /* Mobile menu overlay */
+    .hamburger span {
+      position:absolute;
+      height:4px;
+      width:100%;
+      background:#fff;
+      border-radius:2px;
+      left:0;
+      transition:0.3s ease;
+    }
+    .hamburger span:nth-child(1){top:0;}
+    .hamburger span:nth-child(2){top:13px;}
+    .hamburger span:nth-child(3){top:26px;}
+    .hamburger.active span:nth-child(1){
+      transform:rotate(45deg);
+      top:13px;
+    }
+    .hamburger.active span:nth-child(2){
+      opacity:0;
+    }
+    .hamburger.active span:nth-child(3){
+      transform:rotate(-45deg);
+      top:13px;
+    }
+    /* Mobile menu drawer */
     .mobile-menu {
       position:fixed;
       top:0;left:-220px;
@@ -81,13 +105,21 @@
       transition:opacity 0.3s ease;
       z-index:1000;
     }
-    .overlay.show {
-      opacity:1;
-      pointer-events:auto;
-    }
+    .overlay.show {opacity:1;pointer-events:auto;}
     @media (max-width:700px) {
       .tabs {display:none;}  /* hide desktop tabs */
       .hamburger {display:block;} /* show hamburger */
+    }
+    .topbar {
+      display:flex;
+      align-items:center;
+      background:#333;
+      color:#fff;
+      padding:8px;
+    }
+    .topbar h1 {
+      font-size:18px;
+      margin:0 auto;
     }
   </style>
 </head>
@@ -99,8 +131,14 @@
     <div class="tab" data-tab="final">Final Quote</div>
     <div class="tab" data-tab="materials">Materials</div>
   </div>
-  <!-- Mobile Hamburger -->
-  <div class="hamburger">☰ Menu</div>
+  <!-- Mobile Topbar -->
+  <div class="topbar">
+    <div class="hamburger" id="hamburger">
+      <span></span><span></span><span></span>
+    </div>
+    <h1>Estimator</h1>
+  </div>
+  <!-- Mobile Menu -->
   <div class="mobile-menu" id="mobileMenu">
     <div class="tab active" data-tab="estimator">Estimator</div>
     <div class="tab" data-tab="labor">Labor & Add-Ons</div>
@@ -163,7 +201,6 @@
   <script>
     // ---------- CONFIG ----------
     const SHEET_URL = "https://docs.google.com/spreadsheets/d/XXXXXXXXXXXX/export?format=csv"; 
-    // replace with your sheet publish-to-web CSV link
     let materials = [];
 
     // ---------- HELPERS ----------
@@ -266,17 +303,20 @@
         ['estimator','labor','final','materials'].forEach(id=>{
           document.getElementById(id).hidden=id!==tab.dataset.tab;
         });
-        // close mobile menu and overlay after selection
         $('#mobileMenu').classList.remove('show');
         $('#overlay').classList.remove('show');
+        $('#hamburger').classList.remove('active');
+        document.querySelector('.topbar h1').textContent = tab.textContent;
       }
 
       $$('.tab').forEach(tab=>tab.onclick=()=>activateTab(tab));
-      $('.hamburger').onclick=()=>{
+      $('#hamburger').onclick=()=>{
+        $('#hamburger').classList.toggle('active');
         $('#mobileMenu').classList.toggle('show');
         $('#overlay').classList.toggle('show');
       };
       $('#overlay').onclick=()=>{
+        $('#hamburger').classList.remove('active');
         $('#mobileMenu').classList.remove('show');
         $('#overlay').classList.remove('show');
       };
